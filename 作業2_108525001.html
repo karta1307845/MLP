@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+
+<head>
+    <meta charset="utf-8">
+    <title>作業2-多層感知機(MLP)</title>
+</head>
+
+<body>
+    <h1>作業2 - 多層感知機 (MLP)</h1>
+
+    <div style="height: 400px; width: 600px; padding-top: 100px; margin-bottom: 50px;">
+        <p>
+            <label for="file">選擇資料集:</label>
+            <input type="file" id="file" name="file" accept=".txt">
+        </p>
+        <p>
+            <label>學習率:</label>
+            <input type="text" id="learningRate" size="6" value="0.05">
+        </p>
+        <p>
+            <label>收斂條件:</label>
+            <label>訓練次數</label>
+            <input type="text" id="number" size="6" value="500">
+            <input type="checkbox" id="accuracyBox">
+            <label>辨識率</label>
+            <input type="text" id="accuracy" size="6" value="90">
+            <span>%</span>
+        </p>
+        <p>
+            <button id="startButton">開始訓練</button><span id="message" style="margin-left: 10px; color:red;"></span>
+        </p><br>
+        <p>目前鍵結值</p>
+        <p id="weight1">P<sub>1</sub>:</p>
+        <p id="weight2">P<sub>2</sub>:</p>
+        <p id="weight3">P<sub>3</sub>:</p>
+        <p id="error">RMSE(均方根誤差):</p>
+    </div>
+
+    <div style="position:absolute; top:50px; left:515px;">
+        <h3>原始資料期望輸出</h3>
+        <canvas id="dataCanvas" width="500" height="500" style="border:1px solid black;"></canvas>
+    </div>
+
+    <div>
+        <h3 style="display: inline-block; width: 510px;">訓練資料</h3>
+        <h3 style="display: inline-block; width: 510px;">測試資料</h3><br>
+        <p id="trainingAccuracy" style="display: inline-block; width: 510px;">辨識率:</p>
+        <p id="testAccuracy" style="display: inline-block; width: 510px;">辨識率:</p><br>
+        <canvas id="trainingCanvas" width="500" height="500" style="border:1px solid black;"></canvas>
+        <canvas id="testCanvas" width="500" height="500" style="border:1px solid black;"></canvas>
+    </div>
+</body>
+
+<script>
+    function sigmoid(x) {
+        return 1 / (1 + Math.exp(-x));
+    }
+
+    function Perceptron() {
+        this.input = [];
+        this.weight = [];
+        this.delta = 0;
+
+        this.initialize = function () {
+            while (this.weight.length < 3) {
+                let ranNum = Math.random();
+                if (ranNum == 0) {
+                    continue;
+                }
+                ranNum = Math.round(ranNum * 10000) / 10000;
+                this.weight.push(ranNum);
+            }
+        }
+
+        this.forward = function (input) {
+            this.input = input;
+            let sum = 0;
+            for (let i = 0; i < this.weight.length; i++) {
+                sum += this.weight[i] * input[i];
+            }
+            return sigmoid(sum);
+        }
+
+        this.ouputBackward = function (output, expectedOuput) {
+            this.delta = Math.round((expectedOuput - output) * output * (1 - output) * 10000) / 10000;
+        }
+
+        this.hiddenBackward = function (output, delta, weight) {
+            this.delta = Math.round(output * (1 - output) * delta * weight * 10000) / 10000;
+        }
+
+        this.update = function (learningRate) {
+            for (let i = 0; i < this.weight.length; i++) {
+                this.weight[i] = Math.round((this.weight[i] + (learningRate * this.delta * this.input[i])) * 10000) / 10000;
+            }
+        }
+
+        this.initialize();
+    }
+
+    window.onload = function () {
+        var p1, p2, p3;
+        var weight1 = document.getElementById('weight1');
+        var weight2 = document.getElementById('weight2');
+        var weight3 = document.getElementById('weight3');
+
+        var trainingAccuracyLabel = document.getElementById('trainingAccuracy');
+        var testAccuracyLabel = document.getElementById('testAccuracy');
+        var errorLabel = document.getElementById('error');
+        var messageLabel = document.getElementById('message');
+
+        var data = [];
+        var trainingData = [];
+        var testData = [];
+        var group = new Set();
+
+        var trainingCanvas = document.getElementById('trainingCanvas');
+        var testCanvas = document.getElementById('testCanvas');
+        var normalizedTrainingData = [];
+        var normalizedTestData = [];
+
+        document.getElementById('file').addEventListener('change', readFile);
+        document.getElementById('startButton').addEventListener('click', startTraining);
+
+        // 讀檔
+        function readFile() {
+            var fr = new FileReader();
+
+            fr.onload = function () {
+                reset();
+                p1 = new Perceptron();
+                p2 = new Perceptron();
+                p3 = new Perceptron();
+                showWeight();
+
+                var lines = fr.result.split('\n');
+                var testDataSize = Math.round(lines.length / 3);
+                if (testDataSize == 0) {
+                    console.log(testDataSize);
+                    testDataSize++;
+                }
+                var trainingDataSize = lines.length - testDataSize;
+
+                for (var i = 0; i < lines.length; i++) {
+                    var oneData = lines[i].split(' ');
+                    oneData.splice(0, 0, -1.0);
+                    var ranNum = Math.floor(Math.random() * 10000);
+
+                    if (oneData[1] == '') {
+                        break;
+                    }
+                    data.push(oneData);
+                    group.add(oneData[oneData.length - 1].trim());
+                    if (testData.length < testDataSize && ranNum % 2 == 1) {
+                        testData.push(oneData);
+                    } else {
+                        trainingData.push(oneData);
+                    }
+                }
+
+                var maxMinX = getMaxMinValue(data, 1);
+                var maxMinY = getMaxMinValue(data, 2);
+
+                var normalizedData = normalize(data, maxMinX, maxMinY);
+                drawOriginalData(normalizedData);
+
+                normalizedTrainingData = normalize(trainingData, maxMinX, maxMinY);
+                normalizedTestData = normalize(testData, maxMinX, maxMinY);
+                var accuracyAry = draw();
+                trainingAccuracyLabel.innerHTML = '辨識率: ' + accuracyAry[0] + '%';
+                testAccuracyLabel.innerHTML = '辨識率: ' + accuracyAry[1] + '%';
+            }
+
+            fr.onerror = function () {
+                console.log('error');
+            }
+
+            if (this.files[0] == null) {
+                return;
+            }
+            fr.readAsText(this.files[0]);
+        }
+
+        // 開始訓練
+        function startTraining() {
+            if (document.getElementById('file').files[0] == null) {
+                messageLabel.innerHTML = '未選擇資料集';
+                return;
+            }
+            var groupAry = [...group];
+            var accuracyBox = document.getElementById('accuracyBox');
+            var learningRate = Number.parseFloat(document.getElementById('learningRate').value);
+            var stopNumber = Number.parseInt(document.getElementById('number').value);
+            var stopAccuracy = Number.parseInt(document.getElementById('accuracy').value);
+            var errorMsg = '請輸入訓練次數';
+
+            if (!isNaN(stopNumber)) {
+                if (accuracyBox.checked && isNaN(stopAccuracy)) {
+                    errorMsg += '、辨識率';
+                    messageLabel.innerHTML = errorMsg;
+                    return;
+                }
+                if (learningRate >= 1 || learningRate <= 0) {
+                    messageLabel.innerHTML = '學習率需介於0~1之間(不包含0和1)';
+                    return;
+                }
+                if (stopAccuracy <= 0 || stopAccuracy > 100 && accuracyBox.checked) {
+                    messageLabel.innerHTML = '辨識率需介於1%~100%之間';
+                    return;
+                }
+                messageLabel.innerHTML = '';
+
+                var iteration = 1;
+                while (iteration <= stopNumber) {
+                    for (var i = 0; i < trainingData.length; i++) {
+                        var temp = trainingData[i];
+                        var output = predict(temp);
+                        var expectedOuput = 0;
+                        if (temp[temp.length - 1].trim() == groupAry[0]) {
+                            expectedOuput = 1;
+                        }
+
+                        p3.ouputBackward(output, expectedOuput);
+                        p1.hiddenBackward(p1.forward(temp), p3.delta, p3.weight[1]);
+                        p2.hiddenBackward(p2.forward(temp), p3.delta, p3.weight[2]);
+                        p1.update(learningRate);
+                        p2.update(learningRate);
+                        p3.update(learningRate);
+                    }
+                    var result = test();
+                    if (accuracyBox.checked && test[0] >= stopAccuracy) {
+                        break;
+                    }
+                    iteration++;
+                }
+
+                showWeight();
+                clearCanvas();
+                var accuracyAry = draw();
+                trainingAccuracyLabel.innerHTML = '辨識率: ' + accuracyAry[0] + '%';
+                testAccuracyLabel.innerHTML = '辨識率: ' + accuracyAry[1] + '%';
+                errorLabel.innerHTML = 'RMSE(均方根誤差): ' + result[1];
+                alert('訓練完成');
+            } else {
+                messageLabel.innerHTML = errorMsg;
+            }
+        }
+
+        // 訓練資料準確率
+        function test() {
+            var groupAry = [...group];
+            var accuracy = 0;
+            var error = 0;
+
+            for (var i = 0; i < trainingData.length; i++) {
+                var temp = trainingData[i];
+                var output = predict(temp);
+
+                if (temp[temp.length - 1].trim() == groupAry[0]) {
+                    error += 0.5 * Math.pow(1 - output, 2);
+                    if (output >= 0.5) {
+                        accuracy++;
+                    }
+                } else {
+                    error += 0.5 * Math.pow(0 - output, 2);
+                    if (output < 0.5) {
+                        accuracy++;
+                    }
+                }
+            }
+            accuracy = Math.round(accuracy / trainingData.length * 10000) / 100;
+            error = Math.round(error * 1000000) / 1000000;
+            return [accuracy, error];
+        }
+
+        // 辨識資料
+        function predict(input) {
+            let ouput1 = p1.forward(input);
+            let ouput2 = p2.forward(input);
+            return p3.forward([-1, ouput1, ouput2]);
+        }
+
+        // 取最大最小值
+        function getMaxMinValue(dataAry, index) {
+            var max;
+            var min;
+
+            if (dataAry.length != 0) {
+                max = dataAry[0][index];
+                min = dataAry[0][index];
+
+                for (var i = 1; i < dataAry.length; i++) {
+                    max = Math.max(max, dataAry[i][index]);
+                    min = Math.min(min, dataAry[i][index]);
+                }
+
+                return [max, min];
+            } else {
+                return null;
+            }
+        }
+
+        // 正規化
+        function normalize(dataAry, maxMinX, maxMinY) {
+            var tempAry = [];
+            var maxX = maxMinX[0];
+            var minX = maxMinX[1];
+            var maxY = maxMinY[0];
+            var minY = maxMinY[1];
+
+            for (var i = 0; i < dataAry.length; i++) {
+                var oneData = [];
+                for (var j = 0; j < dataAry[i].length; j++) {
+                    oneData.push(dataAry[i][j]);
+                }
+                var x = oneData[1];
+                var y = oneData[2];
+
+                oneData[1] = (x - minX) / (maxX - minX) * 1.0;
+                oneData[2] = (y - minY) / (maxY - minY) * 1.0;
+                tempAry.push(oneData);
+            }
+
+            return tempAry;
+        }
+
+        // 繪製原始資料
+        function drawOriginalData(originalData) {
+            var canvas = document.getElementById('dataCanvas');
+            var ctx = canvas.getContext('2d');
+            var width = canvas.width;
+            var height = canvas.height;
+            var groupAry = [...group];
+
+            for (var i = 0; i < originalData.length; i++) {
+                var oneData = originalData[i];
+                var x = Math.round(oneData[1] * (width - 50));
+                var y = Math.round(oneData[2] * (height - 50));
+
+                if (oneData[oneData.length - 1].trim() == groupAry[0]) {
+                    ctx.fillStyle = 'red';
+                } else {
+                    ctx.fillStyle = 'blue';
+                }
+
+                ctx.beginPath();
+                ctx.arc(x + 25, y + 25, 2, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+        }
+
+        // 繪圖並回傳辨識率
+        function draw() {
+            var trainingC = trainingCanvas.getContext('2d');
+            var testC = testCanvas.getContext('2d');
+            var groupAry = [...group];
+            var trainingAccuracy = 0;
+            var testAccuracy = 0;
+
+            for (var i = 0; i < normalizedTrainingData.length; i++) {
+                var temp = trainingData[i];
+                var oneData = normalizedTrainingData[i];
+                var x = Math.round(oneData[1] * (trainingCanvas.width - 50));
+                var y = Math.round(oneData[2] * (trainingCanvas.height - 50));
+
+                if (predict(temp) >= 0.5) {
+                    trainingC.fillStyle = 'red';
+                    if (temp[temp.length - 1].trim() == groupAry[0]) {
+                        trainingAccuracy++;
+                    }
+                } else {
+                    trainingC.fillStyle = 'blue';
+                    if (temp[temp.length - 1].trim() == groupAry[1]) {
+                        trainingAccuracy++;
+                    }
+                }
+
+                trainingC.beginPath();
+                trainingC.arc(x + 25, y + 25, 2, 0, 2 * Math.PI);
+                trainingC.fill();
+            }
+            trainingAccuracy = Math.round(trainingAccuracy / trainingData.length * 10000) / 100;
+
+            for (var i = 0; i < normalizedTestData.length; i++) {
+                var temp = testData[i];
+                var oneData = normalizedTestData[i];
+                var x = Math.round(oneData[1] * (testCanvas.width - 50));
+                var y = Math.round(oneData[2] * (testCanvas.height - 50));
+
+                if (predict(temp) >= 0.5) {
+                    testC.fillStyle = 'red';
+                    if (temp[temp.length - 1].trim() == groupAry[0]) {
+                        testAccuracy++;
+                    }
+                } else {
+                    testC.fillStyle = 'blue';
+                    if (temp[temp.length - 1].trim() == groupAry[1]) {
+                        testAccuracy++;
+                    }
+                }
+
+                testC.beginPath();
+                testC.arc(x + 25, y + 25, 2, 0, 2 * Math.PI);
+                testC.fill();
+            }
+            testAccuracy = Math.round(testAccuracy / testData.length * 10000) / 100;
+
+            return [trainingAccuracy, testAccuracy];
+        }
+
+        function showWeight() {
+            weight1.innerHTML = 'P<sub>1</sub>: w<sub>0</sub>=' + p1.weight[0] + '&nbsp;&nbsp;w<sub>1</sub>=' + p1.weight[1] + '&nbsp;&nbsp;w<sub>2</sub>=' + p1.weight[2];
+            weight2.innerHTML = 'P<sub>2</sub>: w<sub>0</sub>=' + p2.weight[0] + '&nbsp;&nbsp;w<sub>1</sub>=' + p2.weight[1] + '&nbsp;&nbsp;w<sub>2</sub>=' + p2.weight[2];
+            weight3.innerHTML = 'P<sub>3</sub>: w<sub>0</sub>=' + p3.weight[0] + '&nbsp;&nbsp;w<sub>1</sub>=' + p3.weight[1] + '&nbsp;&nbsp;w<sub>2</sub>=' + p3.weight[2];
+        }
+
+        function reset() {
+            data = [];
+            trainingData = [];
+            testData = [];
+            normalizedTrainingData = [];
+            normalizedTestData = [];
+            group = new Set();
+
+            var canvas = document.getElementById('dataCanvas');
+            var ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            clearCanvas();
+
+            messageLabel.innerHTML = '';
+            errorLabel.innerHTML = 'RMSE(均方根誤差):';
+        }
+
+        function clearCanvas() {
+            var trainingC = trainingCanvas.getContext('2d');
+            var testC = testCanvas.getContext('2d');
+            trainingC.clearRect(0, 0, trainingCanvas.width, trainingCanvas.height);
+            testC.clearRect(0, 0, testCanvas.width, testCanvas.height);
+        }
+    }
+</script>
+</html>
